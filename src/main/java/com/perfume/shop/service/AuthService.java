@@ -51,26 +51,39 @@ public class AuthService implements UserDetailsService {
     // === Password Reset ===
     @Transactional
     public void initiatePasswordReset(String email) {
-        User user = userRepository.findByEmail(email).orElse(null);
-        if (user == null) {
-            // Do not reveal user existence
-            return;
-        }
-        // Generate token
-        String token = java.util.UUID.randomUUID().toString();
-        java.time.Instant expiry = java.time.Instant.now().plusSeconds(60 * 30); // 30 min
-        user.setResetToken(token);
-        user.setResetTokenExpiry(expiry);
-        userRepository.save(user);
-        // Send email
-        String resetLink = "https://your-frontend-domain/reset-password?token=" + token;
-        String subject = "Password Reset Request";
-        String body = "<p>Click the link below to reset your password:</p>" +
-                "<a href=\"" + resetLink + "\">Reset Password</a>";
         try {
-            emailService.sendEmail(user.getEmail(), subject, body);
+            User user = userRepository.findByEmail(email).orElse(null);
+            if (user == null) {
+                // Do not reveal user existence
+                log.info("Password reset requested for non-existent user: {}", email);
+                return;
+            }
+            // Generate token
+            String token = java.util.UUID.randomUUID().toString();
+            java.time.Instant expiry = java.time.Instant.now().plusSeconds(60 * 30); // 30 min
+            user.setResetToken(token);
+            user.setResetTokenExpiry(expiry);
+            userRepository.save(user);
+            
+            // Send email
+            String resetLink = "http://localhost:3000/reset-password?token=" + token;
+            String subject = "Password Reset Request";
+            String body = "<html><body>" +
+                    "<h2>Password Reset Request</h2>" +
+                    "<p>Click the link below to reset your password:</p>" +
+                    "<a href=\"" + resetLink + "\">Reset Password</a>" +
+                    "<p>This link will expire in 30 minutes.</p>" +
+                    "</body></html>";
+            try {
+                emailService.sendEmail(user.getEmail(), subject, body);
+                log.info("Password reset email sent successfully to: {}", user.getEmail());
+            } catch (Exception emailException) {
+                log.warn("Failed to send password reset email to {}: {}", user.getEmail(), emailException.getMessage());
+                // Don't fail the request if email fails - token is still stored
+            }
         } catch (Exception e) {
-            log.error("Failed to send password reset email: {}", e.getMessage());
+            log.error("Error in initiatePasswordReset: {}", e.getMessage(), e);
+            // Still return successfully to not reveal if user exists
         }
     }
 

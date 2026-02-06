@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import java.util.Map;
 
 /**
  * Authentication controller handling user registration, login, and token refresh.
@@ -56,24 +57,32 @@ public class AuthController {
      * @return Success message
      */
     @PostMapping("/forgot-password")
-    public ResponseEntity<String> forgotPassword(@RequestParam String email) {
+    public ResponseEntity<Map<String, String>> forgotPassword(@RequestBody Map<String, String> request) {
+        String email = request.get("email");
+        if (email == null || email.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Email is required"));
+        }
         authService.initiatePasswordReset(email);
-        return ResponseEntity.ok("Password reset email sent (if user exists)");
+        return ResponseEntity.ok(Map.of("message", "Password reset email sent (if user exists)"));
     }
 
     /**
      * Reset password using token.
      * 
-     * @param token Reset token
-     * @param newPassword New password
+     * @param request Reset token and new password
      * @return Success message
      */
     @PostMapping("/reset-password")
-    public ResponseEntity<String> resetPassword(
-            @RequestParam String token, 
-            @RequestParam String newPassword) {
+    public ResponseEntity<Map<String, String>> resetPassword(@RequestBody Map<String, String> request) {
+        String token = request.get("token");
+        String newPassword = request.get("newPassword");
+        
+        if (token == null || token.trim().isEmpty() || newPassword == null || newPassword.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Token and password are required"));
+        }
+        
         authService.resetPassword(token, newPassword);
-        return ResponseEntity.ok("Password reset successful");
+        return ResponseEntity.ok(Map.of("message", "Password reset successful"));
     }
 
     /**
@@ -103,7 +112,7 @@ public class AuthController {
      * @return Success message
      */
     @PostMapping("/update-role")
-    public ResponseEntity<String> updateUserRole(
+    public ResponseEntity<java.util.Map<String, String>> updateUserRole(
             @RequestParam String email, 
             @RequestParam String role) {
         return ResponseEntity.ok(authService.updateUserRole(email, role));

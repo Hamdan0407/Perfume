@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -14,10 +15,13 @@ import java.util.List;
 
 /**
  * Initializes product data on application startup if no products exist.
- * Only runs in dev profile.
+ * 
+ * DEMO PROFILE ONLY: This creates 20 sample perfume products for testing.
+ * In production, products should be added through admin panel or database migration.
  */
 @Component
-@Profile("dev")
+@Profile("!production")  // Only run when NOT in production profile
+@Order(1)
 @RequiredArgsConstructor
 @Slf4j
 public class ProductDataInitializer implements CommandLineRunner {
@@ -27,11 +31,11 @@ public class ProductDataInitializer implements CommandLineRunner {
     @Override
     public void run(String... args) {
         if (productRepository.count() > 0) {
-            log.info("Products already exist in database, skipping initialization");
+            log.info("✓ Products already exist in database ({}), skipping initialization", productRepository.count());
             return;
         }
         
-        log.info("Initializing product data...");
+        log.info("📦 Initializing sample product data...");
         
         List<Product> products = Arrays.asList(
             // Luxury Women's Fragrances
@@ -66,7 +70,7 @@ public class ProductDataInitializer implements CommandLineRunner {
         );
         
         productRepository.saveAll(products);
-        log.info("Initialized {} products", products.size());
+        log.info("✅ Initialized {} sample products for demo/testing", products.size());
     }
     
     private Product createProduct(String name, String brand, String description, double price, 

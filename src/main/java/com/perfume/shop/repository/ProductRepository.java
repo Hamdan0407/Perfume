@@ -116,4 +116,13 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     Long countByStockLessThanEqual(Integer stock);
     
     Page<Product> findByActiveTrue(Boolean active, Pageable pageable);
+    
+    // Inventory management methods
+    List<Product> findByStockLessThanAndActiveTrue(Integer stock);
+    
+    List<Product> findByStockEqualsAndActiveTrue(Integer stock);
+    
+    Long countByStockLessThanAndActiveTrue(Integer stock);
+    
+    Long countByStockEqualsAndActiveTrue(Integer stock);
 }

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
+import OrderTimeline from '../components/OrderTimeline';
 
 export default function OrderDetail() {
   const { id } = useParams();
@@ -20,6 +21,37 @@ export default function OrderDetail() {
       toast.error('Failed to load order');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDownloadInvoice = async () => {
+    console.log('Download Invoice button clicked');
+    try {
+      const response = await api.get(`/orders/${id}/invoice`, {
+        responseType: 'blob'
+      });
+      console.log('Invoice response:', response);
+
+      // Check if response is a PDF
+      const contentType = response.headers['content-type'];
+      if (!contentType || !contentType.includes('pdf')) {
+        toast.error('Invoice not available or backend error');
+        return;
+      }
+
+      // Create blob and download
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Invoice_${order.orderNumber}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Invoice downloaded successfully');
+    } catch (error) {
+      console.error('Download invoice error:', error);
+      toast.error('Could not download invoice');
     }
   };
 
@@ -79,32 +111,6 @@ export default function OrderDetail() {
           ))}
         </div>
 
-  // Download Invoice handler
-  const handleDownloadInvoice = async () => {
-    console.log('Download Invoice button clicked');
-    try {
-      const response = await api.get(`/api/orders/${id}/invoice`, {
-        responseType: 'blob'
-      });
-      console.log('Invoice response:', response);
-      // Check if response is a PDF
-      const contentType = response.headers['content-type'];
-      if (!contentType || !contentType.includes('pdf')) {
-        toast.error('Invoice not available or backend error');
-        return;
-      }
-      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `Invoice_${order.orderNumber}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } catch (error) {
-      console.error('Download invoice error:', error);
-      toast.error('Could not download invoice');
-    }
-  };
         <div className="mt-6 border-t pt-4 space-y-2">
           <div className="flex justify-between">
             <span className="text-gray-600">Subtotal</span>
@@ -117,20 +123,26 @@ export default function OrderDetail() {
           <div className="flex justify-between">
             <span className="text-gray-600">Shipping</span>
             <span>${order.shippingCost.toFixed(2)}</span>
-                    {/* Show Download Invoice button if order is not cancelled */}
-                    {order.status !== 'CANCELLED' && (
-                      <button
-                        className="mt-4 px-4 py-2 bg-primary-600 text-white rounded shadow hover:bg-primary-700"
-                        onClick={handleDownloadInvoice}
-                      >
-                        Download Invoice
-                      </button>
-                    )}
           </div>
           <div className="flex justify-between text-xl font-bold border-t pt-2">
             <span>Total</span>
             <span className="text-primary-600">₹{order.totalAmount.toFixed(2)}</span>
           </div>
+
+          {/* Show Download Invoice button if order is not cancelled */}
+          {order.status !== 'CANCELLED' && (
+            <button
+              className="mt-4 w-full px-4 py-2 bg-primary-600 text-white rounded shadow hover:bg-primary-700 transition"
+              onClick={handleDownloadInvoice}
+            >
+              Download Invoice
+            </button>
+          )}
+        </div>
+
+        {/* Order Timeline */}
+        <div className="bg-white rounded-lg shadow p-6 mt-6">
+          <OrderTimeline orderId={id} />
         </div>
       </div>
     </div>

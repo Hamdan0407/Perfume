@@ -1,0 +1,46 @@
+{
+  "folders": [
+    {
+      "path": ".",
+      "name": "Perfume Shop"
+    },
+    {
+      "path": "frontend",
+      "name": "Frontend"
+    }
+  ],
+  "settings": {
+    "java.home": "C:\\Program Files\\Java\\jdk-22.0.1",
+    "maven.executable.path": "C:\\apache-maven\\bin\\mvn.cmd",
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "[java]": {
+      "editor.defaultFormatter": "redhat.java",
+      "editor.formatOnSave": true
+    },
+    "files.exclude": {
+      "**/.git": false,
+      "**/node_modules": true,
+      "**/target": false,
+      "**/.classpath": true,
+      "**/.project": true,
+      "**/.settings": true,
+      "**/.factorypath": true
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/target": true,
+      "**/.git": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "redhat.java",
+      "vscjava.vscode-maven",
+      "vscjava.vscode-spring-boot",
+      "esbenp.prettier-vscode",
+      "dbaeumer.vscode-eslint",
+      "ms-vscode.extension-test-runner"
+    ]
+  }
+}

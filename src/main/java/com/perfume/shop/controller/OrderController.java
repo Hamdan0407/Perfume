@@ -1,6 +1,7 @@
 package com.perfume.shop.controller;
 
 import com.perfume.shop.dto.CheckoutRequest;
+import com.perfume.shop.dto.OrderTimelineResponse;
 import com.perfume.shop.dto.RazorpayOrderResponse;
 import com.perfume.shop.dto.RazorpayPaymentVerificationRequest;
 import com.perfume.shop.entity.Order;
@@ -178,6 +179,23 @@ public class OrderController {
         return ResponseEntity.ok(orderService.cancelOrder(id, user));
     }
 
+    /**
+     * Get order timeline with status history.
+     * 
+     * @param id Order ID
+     * @param user Authenticated user
+     * @return List of timeline entries
+     * @throws RuntimeException if order not found or user doesn't own it
+     */
+    @GetMapping("/{id}/timeline")
+    public ResponseEntity<List<OrderTimelineResponse>> getOrderTimeline(
+            @PathVariable Long id,
+            @AuthenticationPrincipal User user
+    ) {
+        Order order = orderService.getOrderById(id, user);
+        return ResponseEntity.ok(orderService.getOrderTimeline(id));
+    }
+    
     /**
      * Download invoice PDF for delivered order.
      * 

@@ -1,0 +1,237 @@
+# Production Configuration for Perfume Shop
+# This file is loaded when running with: --spring.profiles.active=production
+# CRITICAL: Secrets MUST come from environment variables, never hardcode!
+
+spring:
+  application:
+    name: perfume-shop
+  
+  profiles:
+    active: production
+  
+  # ============================================
+  # PRODUCTION DATABASE - PostgreSQL
+  # ============================================
+  datasource:
+    # Use PostgreSQL for production (reliable, scalable, enterprise-grade)
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/perfume_shop_prod}
+    username: ${DATABASE_USERNAME:prod_user}
+    password: ${DATABASE_PASSWORD:change_me_prod_password}
+    driver-class-name: org.postgresql.Driver
+    
+    # Connection Pool Configuration (HikariCP)
+    hikari:
+      maximum-pool-size: ${DATABASE_POOL_SIZE:20}
+      minimum-idle: ${DATABASE_MIN_IDLE:5}
+      connection-timeout: ${DATABASE_CONNECTION_TIMEOUT:30000}
+      idle-timeout: ${DATABASE_IDLE_TIMEOUT:600000}
+      max-lifetime: ${DATABASE_MAX_LIFETIME:1800000}
+      auto-commit: true
+      leak-detection-threshold: 60000
+  
+  # ============================================
+  # JPA/Hibernate Configuration
+  # ============================================
+  jpa:
+    hibernate:
+      # PRODUCTION: Use 'validate' to prevent accidental schema changes
+      # Never use 'create', 'create-drop', or 'update' in production!
+      ddl-auto: validate
+      
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    
+    # Database-specific settings
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        # Optimizations for PostgreSQL
+        jdbc:
+          batch_size: 20
+          fetch_size: 50
+        order_inserts: true
+        order_updates: true
+        # Use batch inserts
+        batch_versioned_data: true
+        # Connection timeout settings
+        connect_timeout: 30000
+    
+    # Logging (IMPORTANT: set to false in production for performance)
+    show-sql: false
+    open-in-view: false
+    defer-datasource-initialization: false
+  
+  # SQL script initialization (disabled in production)
+  sql:
+    init:
+      mode: never
+  
+  # ============================================
+  # CACHING CONFIGURATION - Redis
+  # ============================================
+  cache:
+    type: redis
+    redis:
+      time-to-live: 3600000  # 1 hour
+  
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:change_me_redis}
+      database: ${REDIS_DATABASE:0}
+      timeout: 5000
+      jedis:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+          max-wait: -1ms
+  
+  # ============================================
+  # EMAIL CONFIGURATION - Production SMTP
+  # ============================================
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:your-email@gmail.com}
+    password: ${MAIL_PASSWORD:your-app-password}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 10000
+          writetimeout: 5000
+    test-connection: false
+
+# ============================================
+# SERVER CONFIGURATION
+# ============================================
+server:
+  port: ${PORT:8080}
+  error:
+    include-message: always
+    include-stacktrace: on-param
+  compression:
+    enabled: true
+    min-response-size: 1024
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 10
+    max-connections: 10000
+    accept-count: 100
+    connection-timeout: 20000
+    keep-alive-timeout: 60000
+
+# ============================================
+# LOGGING CONFIGURATION - Production Optimized
+# ============================================
+logging:
+  level:
+    ROOT: WARN
+    com.perfume.shop: INFO
+    # Track important operations but avoid verbose logging
+    com.perfume.shop.controller: INFO
+    com.perfume.shop.service: INFO
+    com.perfume.shop.repository: WARN
+    # Database connection pool logging
+    com.zaxxer.hikari: WARN
+    org.hibernate.engine.transaction: INFO
+  
+  # Log file configuration
+  file:
+    name: logs/perfume-shop.log
+    max-size: 100MB
+    max-history: 30
+    total-size-cap: 5GB
+  
+  pattern:
+    # Production log format: timestamp, level, logger name, message
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%-5p] [%t] %logger{36} - %msg%n"
+
+# ============================================
+# APPLICATION CONFIGURATION
+# ============================================
+app:
+  # JWT Configuration
+  jwt:
+    secret: ${JWT_SECRET:change_me_secure_jwt_secret_min_256_bits}
+    expiration: ${JWT_EXPIRATION:3600000}
+    refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
+    grace-period: ${JWT_GRACE_PERIOD:60000}
+  
+  # Admin Configuration (Production)
+  admin:
+    email: ${ADMIN_EMAIL:admin@yourdomain.com}
+    password: ${ADMIN_PASSWORD:change_me_secure_password}
+  
+  # Payment Gateways
+  razorpay:
+    enabled: ${RAZORPAY_ENABLED:true}
+    key-id: ${RAZORPAY_KEY_ID:rzp_live_change_me}
+    key-secret: ${RAZORPAY_KEY_SECRET:change_me}
+    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:change_me}
+    currency: ${RAZORPAY_CURRENCY:INR}
+  
+  stripe:
+    enabled: ${STRIPE_ENABLED:false}
+    api-key: ${STRIPE_API_KEY:sk_live_change_me}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec_change_me}
+  
+  # CORS Configuration
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:https://yourdomain.com,https://www.yourdomain.com}
+    allowed-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
+    allowed-headers: "*"
+    max-age: 3600
+  
+  # Database Initialization
+  init:
+    # CRITICAL: Set to 'false' in production!
+    # Demo data should NEVER be created in production
+    create-demo-admin: ${CREATE_DEMO_ADMIN:false}
+  
+  # Email Configuration
+  email:
+    max-retries: ${EMAIL_MAX_RETRIES:3}
+    retry-delay: ${EMAIL_RETRY_DELAY:5000}
+    enabled: ${MAIL_ENABLED:true}
+    log-only: ${EMAIL_LOG_ONLY:false}
+
+# ============================================
+# ACTUATOR ENDPOINTS - For Monitoring
+# ============================================
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only expose essential health and metrics in production
+        include: health,metrics,prometheus
+      base-path: /actuator
+  
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+  
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  
+  server:
+    port: 8081  # Separate port for admin endpoints
+
+# ============================================
+# SPRING PROFILES
+# ============================================
+# This profile is for production deployment
+# Loaded with: --spring.profiles.active=production

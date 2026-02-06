@@ -1,12 +1,20 @@
 package com.perfume.shop.controller;
 
 import com.perfume.shop.dto.ApiResponse;
+import com.perfume.shop.dto.OrderStatusUpdateRequest;
 import com.perfume.shop.dto.ProductRequest;
 import com.perfume.shop.dto.ProductResponse;
 import com.perfume.shop.dto.UserResponse;
 import com.perfume.shop.entity.Order;
+import com.perfume.shop.entity.OrderHistory;
+import com.perfume.shop.entity.OrderItem;
+import com.perfume.shop.entity.Product;
 import com.perfume.shop.entity.User;
+import com.perfume.shop.repository.OrderHistoryRepository;
+import com.perfume.shop.repository.OrderRepository;
+import com.perfume.shop.repository.ProductRepository;
 import com.perfume.shop.repository.UserRepository;
+import com.perfume.shop.service.InventoryService;
 import com.perfume.shop.service.OrderService;
 import com.perfume.shop.service.ProductService;
 import jakarta.validation.Valid;
@@ -17,7 +25,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -38,6 +47,10 @@ public class AdminController {
     private final ProductService productService;
     private final OrderService orderService;
     private final UserRepository userRepository;
+    private final OrderRepository orderRepository;
+    private final OrderHistoryRepository orderHistoryRepository;
+    private final ProductRepository productRepository;
+    private final InventoryService inventoryService;
     
     /**
      * Create pageable with sort configuration.
@@ -304,35 +317,36 @@ public class AdminController {
     }
     
     /**
-     * Update order status (via request param).
+     * Update order status with notes.
+     * 
+     * @param id Order ID
+     * @param request Status update request with status and notes
+     * @return Updated order
+     */
+    @PutMapping("/orders/{id}/status")
+    public ResponseEntity<Order> updateOrderStatus(
+            @PathVariable Long id,
+            @Valid @RequestBody OrderStatusUpdateRequest request
+    ) {
+        String adminEmail = SecurityContextHolder.getContext().getAuthentication().getName();
+        Order.OrderStatus status = Order.OrderStatus.valueOf(request.getStatus().toUpperCase());
+        return ResponseEntity.ok(orderService.updateOrderStatus(id, status, adminEmail, request.getNotes()));
+    }
+    
+    /**
+     * Update order status (legacy endpoint for backward compatibility).
      * 
      * @param id Order ID
      * @param status New order status
      * @return Updated order
      */
     @PatchMapping("/orders/{id}/status")
-    public ResponseEntity<Order> updateOrderStatus(
+    public ResponseEntity<Order> updateOrderStatusLegacy(
             @PathVariable Long id,
             @RequestParam Order.OrderStatus status
     ) {
-        return ResponseEntity.ok(orderService.updateOrderStatus(id, status));
-    }
-    
-    /**
-     * Update order status (via request body - for frontend compatibility).
-     * 
-     * @param id Order ID
-     * @param body Request body with status field
-     * @return Updated order
-     */
-    @PutMapping("/orders/{id}/status")
-    public ResponseEntity<Order> updateOrderStatusBody(
-            @PathVariable Long id,
-            @RequestBody Map<String, String> body
-    ) {
-        String statusStr = body.get("status");
-        Order.OrderStatus status = Order.OrderStatus.valueOf(statusStr);
-        return ResponseEntity.ok(orderService.updateOrderStatus(id, status));
+        String adminEmail = SecurityContextHolder.getContext().getAuthentication().getName();
+        return ResponseEntity.ok(orderService.updateOrderStatus(id, status, adminEmail, null));
     }
     
     /**
@@ -348,6 +362,39 @@ public class AdminController {
             @RequestParam String trackingNumber
     ) {
         return ResponseEntity.ok(orderService.updateTrackingNumber(id, trackingNumber));
+    }
+    
+    /**
+     * Cancel an order (admin action).
+     * 
+     * @param id Order ID
+     * @return Cancelled order
+     */
+    @PatchMapping("/orders/{id}/cancel")
+    public ResponseEntity<Order> cancelOrder(@PathVariable Long id) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Order not found"));
+        
+        if (order.getStatus() == Order.OrderStatus.SHIPPED ||
+            order.getStatus() == Order.OrderStatus.DELIVERED ||
+            order.getStatus() == Order.OrderStatus.PACKED) {
+            throw new RuntimeException("Cannot cancel order in current status: " + order.getStatus());
+        }
+        
+        // Restore stock for cancelled orders that have been paid
+        if (order.getStatus() == Order.OrderStatus.PLACED || 
+            order.getStatus() == Order.OrderStatus.CONFIRMED) {
+            restoreStockForOrder(order);
+        }
+        
+        order.setStatus(Order.OrderStatus.CANCELLED);
+        order = orderRepository.save(order);
+        
+        // Create history entry
+        String adminEmail = SecurityContextHolder.getContext().getAuthentication().getName();
+        createOrderHistoryEntry(order, Order.OrderStatus.CANCELLED, adminEmail, "Order cancelled by admin");
+        
+        return ResponseEntity.ok(order);
     }
     
     // ==================== User Management ====================
@@ -474,13 +521,63 @@ public class AdminController {
         Long totalOrders = orderService.countTotalOrders();
         Long totalProducts = productService.getTotalActiveProducts();
         
+        // Inventory alerts
+        long lowStockCount = inventoryService.getLowStockCount();
+        long outOfStockCount = inventoryService.getOutOfStockCount();
+        List<Product> lowStockProducts = inventoryService.getLowStockProducts();
+        List<Product> outOfStockProducts = inventoryService.getOutOfStockProducts();
+        
         Map<String, Object> stats = Map.of(
                 "totalUsers", totalUsers,
                 "totalOrders", totalOrders,
                 "totalProducts", totalProducts,
+                "lowStockCount", lowStockCount,
+                "outOfStockCount", outOfStockCount,
+                "lowStockProducts", lowStockProducts.stream()
+                    .map(p -> Map.of(
+                        "id", p.getId(),
+                        "name", p.getName(),
+                        "stock", p.getStock(),
+                        "threshold", 5
+                    ))
+                    .toList(),
+                "outOfStockProducts", outOfStockProducts.stream()
+                    .map(p -> Map.of(
+                        "id", p.getId(),
+                        "name", p.getName(),
+                        "stock", p.getStock()
+                    ))
+                    .toList(),
                 "timestamp", System.currentTimeMillis()
         );
         
         return ResponseEntity.ok(stats);
+    }
+    
+    /**
+     * Restore stock when order is cancelled
+     */
+    private void restoreStockForOrder(Order order) {
+        for (OrderItem item : order.getItems()) {
+            Product product = item.getProduct();
+            int restoredStock = product.getStock() + item.getQuantity();
+            product.setStock(restoredStock);
+            productRepository.save(product);
+        }
+    }
+    
+    /**
+     * Create order history entry
+     */
+    private void createOrderHistoryEntry(Order order, Order.OrderStatus status, String updatedBy, String notes) {
+        OrderHistory history = OrderHistory.builder()
+                .order(order)
+                .status(status)
+                .timestamp(java.time.LocalDateTime.now())
+                .notes(notes)
+                .updatedBy(updatedBy)
+                .build();
+        
+        orderHistoryRepository.save(history);
     }
 }

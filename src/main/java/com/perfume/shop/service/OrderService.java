@@ -3,6 +3,7 @@ package com.perfume.shop.service;
 import com.perfume.shop.dto.*;
 import com.perfume.shop.entity.*;
 import com.perfume.shop.repository.CartRepository;
+import com.perfume.shop.repository.OrderHistoryRepository;
 import com.perfume.shop.repository.OrderRepository;
 import com.perfume.shop.repository.ProductRepository;
 import com.stripe.exception.StripeException;
@@ -73,6 +74,7 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final CartRepository cartRepository;
     private final ProductRepository productRepository;
+    private final OrderHistoryRepository orderHistoryRepository;
     private final EmailService emailService;
     private final RazorpayService razorpayService;
     
@@ -298,6 +300,10 @@ public class OrderService {
         order.setStatus(Order.OrderStatus.PLACED);
         order.setRazorpayPaymentId(razorpayPaymentId);
         order = orderRepository.save(order);
+
+        // Create initial history entry
+        createOrderHistoryEntry(order, Order.OrderStatus.PLACED, "SYSTEM", "Order payment confirmed and stock deducted");
+
         log.info("Payment confirmed for order: {}", order.getOrderNumber());
         
         // Step 7: Clear user's cart
@@ -430,13 +436,64 @@ public class OrderService {
     public Order updateOrderStatus(Long orderId, Order.OrderStatus status) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new RuntimeException("Order not found"));
-        
+
+        Order.OrderStatus previousStatus = order.getStatus();
         order.setStatus(status);
         order = orderRepository.save(order);
-        
+
+        // Create history entry
+        createOrderHistoryEntry(order, status, "SYSTEM", null);
+
         emailService.sendOrderStatusUpdate(order);
-        
+
         return order;
+    }
+
+    @Transactional
+    public Order updateOrderStatus(Long orderId, Order.OrderStatus status, String updatedBy, String notes) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found"));
+
+        Order.OrderStatus previousStatus = order.getStatus();
+        order.setStatus(status);
+        order = orderRepository.save(order);
+
+        // Create history entry
+        createOrderHistoryEntry(order, status, updatedBy, notes);
+
+        emailService.sendOrderStatusUpdate(order);
+
+        return order;
+    }
+
+    private void createOrderHistoryEntry(Order order, Order.OrderStatus status, String updatedBy, String notes) {
+        OrderHistory history = OrderHistory.builder()
+                .order(order)
+                .status(status)
+                .timestamp(java.time.LocalDateTime.now())
+                .notes(notes)
+                .updatedBy(updatedBy)
+                .build();
+
+        orderHistoryRepository.save(history);
+    }
+
+    public List<OrderTimelineResponse> getOrderTimeline(Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found"));
+
+        List<OrderHistory> historyList = orderHistoryRepository.findByOrderIdOrderByTimestampAsc(orderId);
+
+        return historyList.stream()
+                .map(history -> OrderTimelineResponse.builder()
+                        .id(history.getId())
+                        .status(history.getStatus().toString())
+                        .timestamp(history.getTimestamp())
+                        .notes(history.getNotes())
+                        .updatedBy(history.getUpdatedBy())
+                        .isActive(history.getStatus() == order.getStatus())
+                        .build())
+                .collect(Collectors.toList());
     }
     
     @Transactional
@@ -447,6 +504,9 @@ public class OrderService {
         order.setTrackingNumber(trackingNumber);
         order.setStatus(Order.OrderStatus.SHIPPED);
         order = orderRepository.save(order);
+        
+        // Create history entry
+        createOrderHistoryEntry(order, Order.OrderStatus.SHIPPED, "SYSTEM", "Tracking number added: " + trackingNumber);
         
         emailService.sendShippingNotification(order);
         
@@ -475,8 +535,35 @@ public class OrderService {
             throw new RuntimeException("Cannot cancel order in current status: " + order.getStatus());
         }
         
+        // Restore stock for cancelled orders that have been paid
+        if (order.getStatus() == Order.OrderStatus.PLACED || 
+            order.getStatus() == Order.OrderStatus.CONFIRMED) {
+            restoreStockForOrder(order);
+        }
+        
         order.setStatus(Order.OrderStatus.CANCELLED);
-        return orderRepository.save(order);
+        order = orderRepository.save(order);
+        
+        // Create history entry
+        createOrderHistoryEntry(order, Order.OrderStatus.CANCELLED, user.getEmail(), "Order cancelled by user");
+        
+        return order;
+    }
+    
+    /**
+     * Restore stock when order is cancelled
+     */
+    private void restoreStockForOrder(Order order) {
+        log.info("Restoring stock for cancelled order: {}", order.getOrderNumber());
+        
+        for (OrderItem item : order.getItems()) {
+            Product product = item.getProduct();
+            int restoredStock = product.getStock() + item.getQuantity();
+            product.setStock(restoredStock);
+            productRepository.save(product);
+            log.debug("Restored stock for product {}: +{} units (now {})", 
+                     product.getId(), item.getQuantity(), restoredStock);
+        }
     }
     
     /**
